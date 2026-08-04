@@ -33,6 +33,27 @@ pub(crate) const MAX_DEVICE_NAME_LEN: usize = 64;
 pub(crate) const MAX_MANIFEST_BYTES: usize = 1024 * 1024;
 pub(crate) const MAX_SYNC_ARTIFACT_BYTES: u64 = 512 * 1024 * 1024;
 
+/// Tables whose changes make the remote configuration snapshot stale.
+///
+/// Keep this transport-agnostic so WebDAV and S3 cannot silently drift apart.
+/// `model_pricing` is intentionally excluded while its local JSON sidecar is
+/// the user-owned SSOT.
+pub(crate) fn should_trigger_auto_sync_for_table(table: &str) -> bool {
+    let normalized = table.trim().to_ascii_lowercase();
+    matches!(
+        normalized.as_str(),
+        "providers"
+            | "provider_endpoints"
+            | "mcp_servers"
+            | "prompts"
+            | "skills"
+            | "skill_repos"
+            | "profiles"
+            | "settings"
+            | "proxy_config"
+    )
+}
+
 // ─── Error helpers ───────────────────────────────────────────
 
 pub(crate) fn localized(
@@ -423,6 +444,39 @@ mod tests {
         ArtifactMeta {
             sha256: sha256.to_string(),
             size,
+        }
+    }
+
+    #[test]
+    fn auto_sync_table_filter_covers_shared_configuration() {
+        for table in [
+            "providers",
+            "provider_endpoints",
+            "mcp_servers",
+            "prompts",
+            "skills",
+            "skill_repos",
+            "profiles",
+            "settings",
+            "proxy_config",
+        ] {
+            assert!(
+                should_trigger_auto_sync_for_table(table),
+                "{table} should trigger an automatic snapshot upload"
+            );
+        }
+
+        assert!(should_trigger_auto_sync_for_table("  PROFILES  "));
+        for table in [
+            "proxy_request_logs",
+            "provider_health",
+            "session_log_sync",
+            "model_pricing",
+        ] {
+            assert!(
+                !should_trigger_auto_sync_for_table(table),
+                "{table} should not trigger automatic snapshot upload"
+            );
         }
     }
 
